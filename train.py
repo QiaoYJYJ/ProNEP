@@ -185,8 +185,8 @@ class Train(object):
             y_pred_s = [1 if i else 0 for i in (y_pred >= thred_optim)]
             cm1 = confusion_matrix(y_label, y_pred_s)
             accuracy = (cm1[0, 0] + cm1[1, 1]) / sum(sum(cm1))
-            sensitivity = cm1[0, 0] / (cm1[0, 0] + cm1[0, 1])
-            specificity = cm1[1, 1] / (cm1[1, 0] + cm1[1, 1])
+            specificity = cm1[0, 0] / (cm1[0, 0] + cm1[0, 1])
+            sensitivity = cm1[1, 1] / (cm1[1, 0] + cm1[1, 1])
             if self.experiment:
                 self.experiment.log_curve("test_roc curve", fpr, tpr)
                 self.experiment.log_curve("test_pr curve", recall, prec)
