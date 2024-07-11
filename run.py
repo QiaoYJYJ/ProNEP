@@ -5,11 +5,12 @@ from configs import get_cfg_defaults
 from dataloader import CNEDATA
 from torch.utils.data import DataLoader
 from train import Train
+from domain_adaptator import Discriminator
 import torch
 import argparse
 import warnings, os
 import pandas as pd
-
+import numpy as np
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(device)
@@ -51,24 +52,41 @@ def main():
 
     params = {'batch_size': cfg.SOLVER.BATCH_SIZE, 'shuffle': True, 'num_workers': cfg.SOLVER.NUM_WORKERS,
               'drop_last': True, 'collate_fn': graph_collate_func}
-    
-    training_generator = DataLoader(train_dataset, **params)
+    y = df_train["label"]
+    class_sample_count = np.array([len(np.where(y == t)[0]) for t in np.unique(y)])
+    weight = 1. / class_sample_count
+    samples_weight = np.array([weight[t] for t in y])
+    samples_weight = torch.from_numpy(samples_weight)
+    samples_weight = samples_weight.double()
     params['shuffle'] = False
+    sampler = torch.utils.data.WeightedRandomSampler(samples_weight, len(samples_weight))
+    training_generator = DataLoader(train_dataset, **params, sampler=sampler)
     params['drop_last'] = False
     val_generator = DataLoader(val_dataset, **params)
     test_generator = DataLoader(test_dataset, **params)
 
     model = ProNEP(**cfg).to(device)
 
-    opt = torch.optim.Adam(model.parameters(), lr=cfg.SOLVER.LR)
+    if cfg.DA.USE:
+        if cfg["DA"]["RANDOM_LAYER"]:
+            domain_dmm = Discriminator(input_size=cfg["DA"]["RANDOM_DIM"], n_class=cfg["DECODER"]["BINARY"]).to(device)
+        else:
+            domain_dmm = Discriminator(input_size=cfg["DECODER"]["IN_DIM"] * cfg["DECODER"]["BINARY"],
+                                       n_class=cfg["DECODER"]["BINARY"]).to(device)
+        # params = list(model.parameters()) + list(domain_dmm.parameters())
+        opt = torch.optim.Adam(model.parameters(), lr=cfg.SOLVER.LR)
+        opt_da = torch.optim.Adam(domain_dmm.parameters(), lr=cfg.SOLVER.DA_LR)
+    else:
+        opt = torch.optim.Adam(model.parameters(), lr=cfg.SOLVER.LR)
 
     torch.backends.cudnn.benchmark = True
 
-    # 初始化 Trainer 对象
-    trainer = Train(model, opt, device, training_generator, val_generator, test_generator, opt_da=None,
-                      discriminator=None, experiment=experiment, **cfg)
-
-    # 执行训练
+    if not cfg.DA.USE:
+        trainer = Train(model, opt, training_generator, val_generator, test_generator, opt_da=None,
+                          discriminator=None, experiment=experiment, **cfg)
+    else:
+        trainer = Train(model, opt, multi_generator, val_generator, test_generator, opt_da=opt_da,
+                          discriminator=domain_dmm, experiment=experiment, **cfg)
     result = trainer.train()
 
     with open(os.path.join(cfg.RESULT.OUTPUT_DIR, "model_architecture.txt"), "w") as wf:
@@ -76,7 +94,7 @@ def main():
 
     print()
     print(f"Directory for saving result: {cfg.RESULT.OUTPUT_DIR}")
-    result = trainer.train()
+
     return result
 
 

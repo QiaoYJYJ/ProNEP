@@ -149,14 +149,23 @@ class BC(nn.Module):
             logits = self.p_net(logits).squeeze(1) * self.k  # sum-pooling
         return logits
 
-
+'''
 def binary_cross_entropy(pred_output, labels):
     loss_fct = torch.nn.BCELoss()
     m = nn.Sigmoid()
     n = torch.squeeze(m(pred_output), 1)
     loss = loss_fct(n, labels)
     return n, loss
+'''
 
+def binary_cross_entropy(pred_output, labels):
+    loss_fct = nn.BCELoss()
+    m = nn.Sigmoid()
+    n = m(pred_output)
+    # Ensure labels are the same shape as the predictions
+    labels = labels.view_as(n)
+    loss = loss_fct(n, labels)
+    return n, loss
 
 def cross_entropy_logits(linear_output, label, weights=None):
     class_output = F.log_softmax(linear_output, dim=1)

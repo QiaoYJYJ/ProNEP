@@ -18,12 +18,13 @@ def set_seed(seed=1000):
 
 def graph_collate_func(x):
     d, p, y = zip(*x)
-    p = np.asarray(p,dtype=object)
-    d = np.asarray(d,dtype=object)
-    p=np.stack(p).astype(float)
-    d=np.stack(d).astype(float)
-    return torch.tensor(d), torch.tensor(p), torch.tensor(y)
 
+    # 如果输入张量已经在GPU上，则不需要转换为NumPy数组
+    d = torch.stack(d).float()
+    p = torch.stack(p).float()
+    y = torch.stack(y).float()
+
+    return d, p, y
 
 def mkdir(path):
     path = path.strip()
@@ -31,4 +32,5 @@ def mkdir(path):
     is_exists = os.path.exists(path)
     if not is_exists:
         os.makedirs(path)
+
 

@@ -35,6 +35,17 @@ _C.RESULT = CN()
 _C.RESULT.OUTPUT_DIR = "./result"
 _C.RESULT.SAVE_MODEL = True
 
+# Domain adaptation
+_C.DA = CN()
+_C.DA.TASK = False
+_C.DA.METHOD = "CDAN"
+_C.DA.USE = False
+_C.DA.INIT_EPOCH = 10
+_C.DA.LAMB_DA = 1
+_C.DA.RANDOM_LAYER = False
+_C.DA.ORIGINAL_RANDOM = False
+_C.DA.RANDOM_DIM = None
+_C.DA.USE_ENTROPY = True
 
 # Comet config, ignore it If not installed.
 _C.COMET = CN()

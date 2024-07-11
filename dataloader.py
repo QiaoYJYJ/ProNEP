@@ -5,17 +5,22 @@ from prose.models.multitask import ProSEMT
 
 max_length = 1795
 
-model = ProSEMT.load_pretrained()
+# Load model and move to GPU
+device = torch.device("cuda")
+model = ProSEMT.load_pretrained().to(device)
 model.eval()
+
 def pretrained_embedding(v, max_length):
-    z = embed_sequence(model, v)
+    z = embed_sequence(model, v).to(device)
     padding = z.size()[0]
     if padding < max_length:
-        padding_zeros = torch.zeros((max_length - z.size()[0]), 6165)
+        padding_zeros = torch.zeros((max_length - padding, 6165)).to(device)
         weight = torch.vstack((z, padding_zeros))
     else:
         weight = z[:max_length, :]
     return weight
+
+
 
 
 class CNEDATA(data.Dataset):
@@ -35,7 +40,5 @@ class CNEDATA(data.Dataset):
         v_p = self.df.iloc[index]['Protein2']
         v_p = pretrained_embedding(v_p, self.max_length_NLR)
         y = self.df.iloc[index]["label"]
-        y = torch.Tensor([y])
+        y = torch.Tensor([y]).to(device)
         return v_d, v_p, y
-
-
