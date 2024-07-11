@@ -60,7 +60,7 @@ class Train(object):
         self.output_dir = config["RESULT"]["OUTPUT_DIR"]
 
         valid_metric_header = ["# Epoch", "AUROC", "AUPRC", "Val_loss"]
-        test_metric_header = ["# Best Epoch", "AUROC", "AUPRC", "F1", "Sensitivity", "Specificity", "Accuracy",
+        test_metric_header = ["# Best Epoch", "AUROC", "AUPRC", "F1", "Sensitivity", "Precision", "Accuracy",
                               "Threshold", "Test_loss"]
         if not self.is_da:
             train_metric_header = ["# Epoch", "Train_loss"]
@@ -118,23 +118,22 @@ class Train(object):
                 self.best_epoch = self.current_epoch
             print('Validation at Epoch ' + str(self.current_epoch) + ' with validation loss ' + str(val_loss), " AUROC "
                   + str(auroc) + " AUPRC " + str(auprc))
-        auroc, auprc, f1, sensitivity, specificity, accuracy, test_loss, thred_optim, precision = self.test(dataloader="test")
-        test_lst = ["epoch " + str(self.best_epoch)] + list(map(float2str, [auroc, auprc, f1, sensitivity, specificity,
+        auroc, auprc, f1, sensitivity, precision, accuracy, test_loss, thred_optim = self.test(dataloader="test")
+        test_lst = ["epoch " + str(self.best_epoch)] + list(map(float2str, [auroc, auprc, f1, sensitivity, Precision,
                                                                             accuracy, thred_optim, test_loss]))
         self.test_table.add_row(test_lst)
         print('Test at Best Model of Epoch ' + str(self.best_epoch) + ' with test loss ' + str(test_loss), " AUROC "
-              + str(auroc) + " AUPRC " + str(auprc) + " Sensitivity " + str(sensitivity) + " Specificity " +
-              str(specificity) + " Accuracy " + str(accuracy) + " Thred_optim " + str(thred_optim))
+              + str(auroc) + " AUPRC " + str(auprc) + " Sensitivity " + str(sensitivity) + " Precision " +
+              str(precision) + " Accuracy " + str(accuracy) + " Thred_optim " + str(thred_optim))
         self.test_metrics["auroc"] = auroc
         self.test_metrics["auprc"] = auprc
         self.test_metrics["test_loss"] = test_loss
         self.test_metrics["sensitivity"] = sensitivity
-        self.test_metrics["specificity"] = specificity
+        self.test_metrics["precision"] = precision
         self.test_metrics["accuracy"] = accuracy
         self.test_metrics["thred_optim"] = thred_optim
         self.test_metrics["best_epoch"] = self.best_epoch
         self.test_metrics["F1"] = f1
-        self.test_metrics["Precision"] = precision
         self.save_result()
         if self.experiment:
             self.experiment.log_metric("valid_best_auroc", self.best_auroc)
@@ -142,11 +141,10 @@ class Train(object):
             self.experiment.log_metric("test_auroc", self.test_metrics["auroc"])
             self.experiment.log_metric("test_auprc", self.test_metrics["auprc"])
             self.experiment.log_metric("test_sensitivity", self.test_metrics["sensitivity"])
-            self.experiment.log_metric("test_specificity", self.test_metrics["specificity"])
+            self.experiment.log_metric("test_precision", self.test_metrics["precision"])
             self.experiment.log_metric("test_accuracy", self.test_metrics["accuracy"])
             self.experiment.log_metric("test_threshold", self.test_metrics["thred_optim"])
             self.experiment.log_metric("test_f1", self.test_metrics["F1"])
-            self.experiment.log_metric("test_precision", self.test_metrics["Precision"])
         return self.test_metrics
 
     def save_result(self):
@@ -352,11 +350,11 @@ class Train(object):
             cm1 = confusion_matrix(y_label, y_pred_s)
             accuracy = (cm1[0, 0] + cm1[1, 1]) / sum(sum(cm1))
             sensitivity = cm1[0, 0] / (cm1[0, 0] + cm1[0, 1])
-            specificity = cm1[1, 1] / (cm1[1, 0] + cm1[1, 1])
+            precision = cm1[1, 1] / (cm1[1, 0] + cm1[1, 1])
             if self.experiment:
                 self.experiment.log_curve("test_roc curve", fpr, tpr)
                 self.experiment.log_curve("test_pr curve", recall, prec)
             precision1 = precision_score(y_label, y_pred_s)
-            return auroc, auprc, np.max(f1[5:]), sensitivity, specificity, accuracy, test_loss, thred_optim, precision1
+            return auroc, auprc, np.max(f1[5:]), sensitivity, precision, accuracy, test_loss, thred_optim, precision1
         else:
             return auroc, auprc, test_loss
