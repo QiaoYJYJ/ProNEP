@@ -119,7 +119,7 @@ class Train(object):
             print('Validation at Epoch ' + str(self.current_epoch) + ' with validation loss ' + str(val_loss), " AUROC "
                   + str(auroc) + " AUPRC " + str(auprc))
         auroc, auprc, f1, sensitivity, precision, accuracy, test_loss, thred_optim = self.test(dataloader="test")
-        test_lst = ["epoch " + str(self.best_epoch)] + list(map(float2str, [auroc, auprc, f1, sensitivity, Precision,
+        test_lst = ["epoch " + str(self.best_epoch)] + list(map(float2str, [auroc, auprc, f1, sensitivity, precision,
                                                                             accuracy, thred_optim, test_loss]))
         self.test_table.add_row(test_lst)
         print('Test at Best Model of Epoch ' + str(self.best_epoch) + ' with test loss ' + str(test_loss), " AUROC "
@@ -354,7 +354,6 @@ class Train(object):
             if self.experiment:
                 self.experiment.log_curve("test_roc curve", fpr, tpr)
                 self.experiment.log_curve("test_pr curve", recall, prec)
-            precision1 = precision_score(y_label, y_pred_s)
-            return auroc, auprc, np.max(f1[5:]), sensitivity, precision, accuracy, test_loss, thred_optim, precision1
+            return auroc, auprc, np.max(f1[5:]), sensitivity, precision, accuracy, test_loss, thred_optim
         else:
             return auroc, auprc, test_loss
