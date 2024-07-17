@@ -52,6 +52,7 @@ def main():
 
     params = {'batch_size': cfg.SOLVER.BATCH_SIZE, 'shuffle': True, 'num_workers': cfg.SOLVER.NUM_WORKERS,
               'drop_last': True, 'collate_fn': graph_collate_func}
+
     y = df_train["label"]
     class_sample_count = np.array([len(np.where(y == t)[0]) for t in np.unique(y)])
     weight = 1. / class_sample_count
@@ -73,7 +74,6 @@ def main():
         else:
             domain_dmm = Discriminator(input_size=cfg["DECODER"]["IN_DIM"] * cfg["DECODER"]["BINARY"],
                                        n_class=cfg["DECODER"]["BINARY"]).to(device)
-        # params = list(model.parameters()) + list(domain_dmm.parameters())
         opt = torch.optim.Adam(model.parameters(), lr=cfg.SOLVER.LR)
         opt_da = torch.optim.Adam(domain_dmm.parameters(), lr=cfg.SOLVER.DA_LR)
     else:
@@ -82,11 +82,13 @@ def main():
     torch.backends.cudnn.benchmark = True
 
     if not cfg.DA.USE:
-        trainer = Train(model, opt, training_generator, val_generator, test_generator, opt_da=None,
-                          discriminator=None, experiment=experiment, **cfg)
+        trainer = Train(model, opt, device, training_generator, val_generator, test_generator, opt_da=None,
+                          discriminator=None,
+                          experiment=experiment, **cfg)
     else:
-        trainer = Train(model, opt, multi_generator, val_generator, test_generator, opt_da=opt_da,
-                          discriminator=domain_dmm, experiment=experiment, **cfg)
+        trainer = Train(model, opt, device, multi_generator, val_generator, test_generator, opt_da=opt_da,
+                          discriminator=domain_dmm,
+                          experiment=experiment, **cfg)
     result = trainer.train()
 
     with open(os.path.join(cfg.RESULT.OUTPUT_DIR, "model_architecture.txt"), "w") as wf:
