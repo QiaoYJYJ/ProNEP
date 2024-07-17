@@ -7,57 +7,41 @@ from torch.nn.utils.weight_norm import weight_norm
 
 
 class BAN(nn.Module):
-    def __init__(self, v_dim, q_dim, h_dim, h_out, act='ReLU', dropout=0.2, k=3):
+    def __init__(self, v_dim, q_dim, h_dim, h_out, act='ReLU', dropout=0.2):
         super(BAN, self).__init__()
-
-        self.c = 32
-        self.k = k
-        self.v_dim = v_dim
-        self.q_dim = q_dim
-        self.h_dim = h_dim
         self.h_out = h_out
 
-        self.v_net = FC([v_dim, h_dim * self.k], act=act, dropout=dropout)
-        self.q_net = FC([q_dim, h_dim * self.k], act=act, dropout=dropout)
-        if 1 < k:
-            self.p_net = nn.AvgPool1d(self.k, stride=self.k)
+        self.v_net = nn.Linear(v_dim, h_dim)
+        self.q_net = nn.Linear(q_dim, h_dim)
+        self.att_net = nn.Linear(h_dim, h_out)
 
-        if h_out <= self.c:
-            self.h_mat = nn.Parameter(torch.Tensor(1, h_out, 1, h_dim * self.k).normal_())
-            self.h_bias = nn.Parameter(torch.Tensor(1, h_out, 1, 1).normal_())
-        else:
-            self.h_net = weight_norm(nn.Linear(h_dim * self.k, h_out), dim=None)
-
-        self.bn = nn.BatchNorm1d(h_dim)
+        self.bn = nn.BatchNorm1d(h_out)
 
     def attention_pooling(self, v, q, att_map):
-        fusion_logits = torch.einsum('bvk,bvq,bqk->bk', (v, att_map, q))
-        if 1 < self.k:
-            fusion_logits = fusion_logits.unsqueeze(1)  # b x 1 x d
-            fusion_logits = self.p_net(fusion_logits).squeeze(1) * self.k  # sum-pooling
+        fusion_logits = torch.einsum('bvk,bqk->bk', (v, att_map * q))
         return fusion_logits
 
     def forward(self, v, q, softmax=False):
         v_num = v.size(1)
         q_num = q.size(1)
-        if self.h_out <= self.c:
-            v_ = self.v_net(v)
-            q_ = self.q_net(q)
-            att_maps = torch.einsum('xhyk,bvk,bqk->bhvq', (self.h_mat, v_, q_)) + self.h_bias
-        else:
-            v_ = self.v_net(v).transpose(1, 2).unsqueeze(3)
-            q_ = self.q_net(q).transpose(1, 2).unsqueeze(2)
-            d_ = torch.matmul(v_, q_)  # b x h_dim x v x q
-            att_maps = self.h_net(d_.transpose(1, 2).transpose(2, 3))  # b x v x q x h_out
-            att_maps = att_maps.transpose(2, 3).transpose(1, 2)  # b x h_out x v x q
+
+        v_ = self.v_net(v)
+        q_ = self.q_net(q)
+
+        att_maps = self.att_net(q_)
+
         if softmax:
-            p = nn.functional.softmax(att_maps.view(-1, self.h_out, v_num * q_num), 2)
-            att_maps = p.view(-1, self.h_out, v_num, q_num)
+            print("Softmax to attention map is enabled")
+            att_maps = nn.functional.softmax(att_maps.view(-1, self.h_out, v_num * q_num), 2)
+            att_maps = att_maps.view(-1, self.h_out, v_num, q_num)
+
         logits = self.attention_pooling(v_, q_, att_maps[:, 0, :, :])
         for i in range(1, self.h_out):
             logits_i = self.attention_pooling(v_, q_, att_maps[:, i, :, :])
             logits += logits_i
+
         logits = self.bn(logits)
+
         return logits, att_maps
 
 
@@ -133,6 +117,8 @@ class BC(nn.Module):
             logits = torch.einsum('xhyk,bvk,bqk->bhvq', (self.h_mat, v_, q_)) + self.h_bias
             return logits  # b x h_out x v x q
 
+        # batch outer product, linear projection
+        # memory efficient but slow computation
         else:
             v_ = self.dropout(self.v_net(v)).transpose(1, 2).unsqueeze(3)
             q_ = self.q_net(q).transpose(1, 2).unsqueeze(2)
@@ -149,21 +135,12 @@ class BC(nn.Module):
             logits = self.p_net(logits).squeeze(1) * self.k  # sum-pooling
         return logits
 
-'''
+
+
 def binary_cross_entropy(pred_output, labels):
     loss_fct = torch.nn.BCELoss()
     m = nn.Sigmoid()
     n = torch.squeeze(m(pred_output), 1)
-    loss = loss_fct(n, labels)
-    return n, loss
-'''
-
-def binary_cross_entropy(pred_output, labels):
-    loss_fct = nn.BCELoss()
-    m = nn.Sigmoid()
-    n = m(pred_output)
-    # Ensure labels are the same shape as the predictions
-    labels = labels.view_as(n)
     loss = loss_fct(n, labels)
     return n, loss
 
@@ -203,6 +180,7 @@ class ProNEP(nn.Module):
             BAN(v_dim=num_filters[-1], q_dim=num_filters[-1], h_dim=mlp_in_dim, h_out=ban_heads),
             name='h_mat', dim=None)
         self.mlp_classifier = MLPDecoder(mlp_in_dim, mlp_hidden_dim, mlp_out_dim, binary=out_binary)
+        self.contrastive_loss = nn.CosineEmbeddingLoss()
 
     def forward(self, v_d, v_p, mode="train"):
         v_d = self.protein_extractor(v_d)
@@ -213,6 +191,16 @@ class ProNEP(nn.Module):
             return v_d, v_p, f, score
         elif mode == "eval":
             return v_d, v_p, score, att
+        return v_d, v_p, f, score
+
+    def contrastive_loss_forward(self, v1, v2):
+        v1_norm = F.normalize(v1, p=2, dim=1)
+        v2_norm = F.normalize(v2, p=2, dim=1)
+        similarity = F.cosine_similarity(v1_norm, v2_norm)
+        target = torch.ones_like(similarity)
+        loss = self.contrastive_loss(v1_norm, v2_norm, target)
+
+        return loss
 
 
 
@@ -230,15 +218,12 @@ class ProteinCNNCustom(nn.Module):
         self.bn2 = nn.BatchNorm1d(in_ch[2])
         self.conv3 = nn.Conv1d(in_channels=in_ch[2], out_channels=in_ch[3], kernel_size=kernels[2])
         self.bn3 = nn.BatchNorm1d(in_ch[3])
-        self.conv4 = nn.Conv1d(in_channels=in_ch[3], out_channels=in_ch[4], kernel_size=kernels[3])
-        self.bn4 = nn.BatchNorm1d(in_ch[4])
-   
+
     def forward(self, v):
         v = v.transpose(2, 1)
         v = self.bn1(F.relu(self.conv1(v.float())))
         v = self.bn2(F.relu(self.conv2(v)))
         v = self.bn3(F.relu(self.conv3(v)))
-        v = self.bn4(F.relu(self.conv4(v)))
         v = v.view(v.size(0), v.size(2), -1)
         return v
 

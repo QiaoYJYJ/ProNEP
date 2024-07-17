@@ -5,12 +5,6 @@ import h5py
 import torch
 from prose.alphabets import Uniprot21
 import prose.fasta as fasta
-import sys
-import numpy as np
-import h5py
-import torch
-from prose.alphabets import Uniprot21
-import prose.fasta as fasta
 
 
 def embed_sequence(model, x, pool='none', device='cuda'):
