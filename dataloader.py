@@ -1,29 +1,29 @@
+# import pandas as pd
 import torch.utils.data as data
 import torch
-from pro_embedding import embed_sequence
+# import numpy as np
+# from functools import partial
+# from dgllife.utils import smiles_to_bigraph, CanonicalAtomFeaturizer, CanonicalBondFeaturizer
+# from utils import integer_label_protein
+from embed_sequences import embed_sequence
 from prose.models.multitask import ProSEMT
 
 max_length = 1795
 
-# Load model and move to GPU
-device = torch.device("cuda")
-model = ProSEMT.load_pretrained().to(device)
+model = ProSEMT.load_pretrained()
 model.eval()
-
 def pretrained_embedding(v, max_length):
-    z = embed_sequence(model, v).to(device)
+    z = embed_sequence(model, v)
     padding = z.size()[0]
     if padding < max_length:
-        padding_zeros = torch.zeros((max_length - padding, 6165)).to(device)
+        padding_zeros = torch.zeros((max_length - z.size()[0]), 6165)
         weight = torch.vstack((z, padding_zeros))
     else:
         weight = z[:max_length, :]
     return weight
 
 
-
-
-class CNEDATA(data.Dataset):
+class CNEDataset(data.Dataset):
     def __init__(self, list_IDs, df, max_length_NLR, max_length_eff):
         self.list_IDs = list_IDs
         self.df = df
@@ -40,5 +40,5 @@ class CNEDATA(data.Dataset):
         v_p = self.df.iloc[index]['Protein2']
         v_p = pretrained_embedding(v_p, self.max_length_NLR)
         y = self.df.iloc[index]["label"]
-        y = torch.Tensor([y]).to(device)
+        y = torch.Tensor([y])
         return v_d, v_p, y

@@ -3,17 +3,24 @@ import torch.nn as nn
 import copy
 import os
 import numpy as np
-from sklearn.metrics import roc_auc_score, average_precision_score, roc_curve, confusion_matrix, precision_recall_curve, precision_score
+from sklearn.metrics import roc_auc_score, average_precision_score, roc_curve, confusion_matrix, precision_recall_curve, \
+    precision_score
 from models import binary_cross_entropy, cross_entropy_logits, entropy_logits, RandomLayer
 from prettytable import PrettyTable
 from domain_adaptator import ReverseLayerF
 from tqdm import tqdm
 
-class Train(object):
-    def __init__(self, model, optim, train_dataloader, val_dataloader, test_dataloader, opt_da=None, discriminator=None,
+# 定义一个空列表，用于存储每一个epoch的loss
+loss_list = []
+
+
+class Trainer(object):
+    def __init__(self, model, optim, device, train_dataloader, val_dataloader, test_dataloader, opt_da=None,
+                 discriminator=None,
                  experiment=None, alpha=1, **config):
-        self.model = model.cuda()
+        self.model = model
         self.optim = optim
+        self.device = device
         self.epochs = config["SOLVER"]["MAX_EPOCH"]
         self.current_epoch = 0
         self.train_dataloader = train_dataloader
@@ -28,8 +35,9 @@ class Train(object):
             self.da_method = config["DA"]["METHOD"]
             self.domain_dmm = discriminator
             if config["DA"]["RANDOM_LAYER"] and not config["DA"]["ORIGINAL_RANDOM"]:
-                self.random_layer = nn.Linear(in_features=config["DECODER"]["IN_DIM"]*self.n_class, out_features=config["DA"]
-                ["RANDOM_DIM"], bias=False).to(self.cuda())
+                self.random_layer = nn.Linear(in_features=config["DECODER"]["IN_DIM"] * self.n_class,
+                                              out_features=config["DA"]
+                                              ["RANDOM_DIM"], bias=False).to(self.device)
                 torch.nn.init.normal_(self.random_layer.weight, mean=0, std=1)
                 for param in self.random_layer.parameters():
                     param.requires_grad = False
@@ -60,7 +68,7 @@ class Train(object):
         self.output_dir = config["RESULT"]["OUTPUT_DIR"]
 
         valid_metric_header = ["# Epoch", "AUROC", "AUPRC", "Val_loss"]
-        test_metric_header = ["# Best Epoch", "AUROC", "AUPRC", "F1", "Sensitivity", "Specificity", "Accuracy",
+        test_metric_header = ["# Best Epoch", "AUROC", "AUPRC", "F1", "Precision", "Specificity", "Accuracy",
                               "Threshold", "Test_loss"]
         if not self.is_da:
             train_metric_header = ["# Epoch", "Train_loss"]
@@ -87,6 +95,9 @@ class Train(object):
             self.current_epoch += 1
             if not self.is_da:
                 train_loss = self.train_epoch()
+                # print('inside train_loss')
+                # print(train_loss)
+                # return
                 train_lst = ["epoch " + str(self.current_epoch)] + list(map(float2str, [train_loss]))
                 if self.experiment:
                     self.experiment.log_metric("train_epoch model loss", train_loss, epoch=self.current_epoch)
@@ -118,17 +129,18 @@ class Train(object):
                 self.best_epoch = self.current_epoch
             print('Validation at Epoch ' + str(self.current_epoch) + ' with validation loss ' + str(val_loss), " AUROC "
                   + str(auroc) + " AUPRC " + str(auprc))
-        auroc, auprc, f1, sensitivity, specificity, accuracy, test_loss, thred_optim, precision = self.test(dataloader="test")
-        test_lst = ["epoch " + str(self.best_epoch)] + list(map(float2str, [auroc, auprc, f1, sensitivity, specificity,
+        auroc, auprc, f1, precision, specificity, accuracy, test_loss, thred_optim, precision = self.test(
+            dataloader="test")
+        test_lst = ["epoch " + str(self.best_epoch)] + list(map(float2str, [auroc, auprc, f1, precision, specificity,
                                                                             accuracy, thred_optim, test_loss]))
         self.test_table.add_row(test_lst)
         print('Test at Best Model of Epoch ' + str(self.best_epoch) + ' with test loss ' + str(test_loss), " AUROC "
-              + str(auroc) + " AUPRC " + str(auprc) + " Sensitivity " + str(sensitivity) + " Specificity " +
+              + str(auroc) + " AUPRC " + str(auprc) + " Precision " + str(precision) + " Specificity " +
               str(specificity) + " Accuracy " + str(accuracy) + " Thred_optim " + str(thred_optim))
         self.test_metrics["auroc"] = auroc
         self.test_metrics["auprc"] = auprc
         self.test_metrics["test_loss"] = test_loss
-        self.test_metrics["sensitivity"] = sensitivity
+        self.test_metrics["precision"] = precision
         self.test_metrics["specificity"] = specificity
         self.test_metrics["accuracy"] = accuracy
         self.test_metrics["thred_optim"] = thred_optim
@@ -141,7 +153,7 @@ class Train(object):
             self.experiment.log_metric("valid_best_epoch", self.best_epoch)
             self.experiment.log_metric("test_auroc", self.test_metrics["auroc"])
             self.experiment.log_metric("test_auprc", self.test_metrics["auprc"])
-            self.experiment.log_metric("test_sensitivity", self.test_metrics["sensitivity"])
+            self.experiment.log_metric("test_precision", self.test_metrics["precision"])
             self.experiment.log_metric("test_specificity", self.test_metrics["specificity"])
             self.experiment.log_metric("test_accuracy", self.test_metrics["accuracy"])
             self.experiment.log_metric("test_threshold", self.test_metrics["thred_optim"])
@@ -188,20 +200,16 @@ class Train(object):
         num_batches = len(self.train_dataloader)
         for i, (v_d, v_p, labels) in enumerate(tqdm(self.train_dataloader)):
             self.step += 1
-
-            # 直接使用PyTorch的操作来计算0和1的数量
-            num_zeros = (labels == 0).sum().item()
-            num_ones = (labels == 1).sum().item()
-
+            # print(type(v_d))
+            # print(type(v_p))
+            # print(type(labels))
+            # return
             print("batch index {}, 0/1: {}/{}".format(
                 i,
-                num_zeros,
-                num_ones
-            ))
+                len(np.where(labels.numpy() == 0)[0]),
+                len(np.where(labels.numpy() == 1)[0])))
 
-            v_d, v_p, labels = v_d.cuda(), v_p.cuda(), labels.float().cuda()
-            labels = labels.view(-1)  # 确保labels形状为[batch_size]
-
+            v_d, v_p, labels = v_d.to(self.device), v_p.to(self.device), labels.float().to(self.device)
             self.optim.zero_grad()
             v_d, v_p, f, score = self.model(v_d, v_p)
             if self.n_class == 1:
@@ -215,6 +223,8 @@ class Train(object):
                 self.experiment.log_metric("train_step model loss", loss.item(), step=self.step)
         loss_epoch = loss_epoch / num_batches
         print('Training at Epoch ' + str(self.current_epoch) + ' with training loss ' + str(loss_epoch))
+        # 将每一个epoch的loss添加到列表中
+        loss_list.append(loss_epoch)
         return loss_epoch
 
     def train_da_epoch(self):
@@ -224,14 +234,16 @@ class Train(object):
         da_loss_epoch = 0
         epoch_lamb_da = 0
         if self.current_epoch >= self.da_init_epoch:
+            # epoch_lamb_da = self.da_lambda_decay()
             epoch_lamb_da = 1
             if self.experiment:
                 self.experiment.log_metric("DA loss lambda", epoch_lamb_da, epoch=self.current_epoch)
         num_batches = len(self.train_dataloader)
         for i, (batch_s, batch_t) in enumerate(tqdm(self.train_dataloader)):
             self.step += 1
-            v_d, v_p, labels = batch_s[0].cuda(), batch_s[1].cuda(), batch_s[2].float().cuda()
-            v_d_t, v_p_t = batch_t[0].cuda(), batch_t[1].cuda()
+            v_d, v_p, labels = batch_s[0].to(self.device), batch_s[1].to(self.device), batch_s[2].float().to(
+                self.device)
+            v_d_t, v_p_t = batch_t[0].to(self.device), batch_t[1].to(self.device)
             self.optim.zero_grad()
             self.optim_da.zero_grad()
             v_d, v_p, f, score = self.model(v_d, v_p)
@@ -245,6 +257,7 @@ class Train(object):
                     reverse_f = ReverseLayerF.apply(f, self.alpha)
                     softmax_output = torch.nn.Softmax(dim=1)(score)
                     softmax_output = softmax_output.detach()
+                    # reverse_output = ReverseLayerF.apply(softmax_output, self.alpha)
                     if self.original_random:
                         random_out = self.random_layer.forward([reverse_f, softmax_output])
                         adv_output_src_score = self.domain_dmm(random_out.view(-1, random_out.size(1)))
@@ -260,6 +273,7 @@ class Train(object):
                     reverse_f_t = ReverseLayerF.apply(f_t, self.alpha)
                     softmax_output_t = torch.nn.Softmax(dim=1)(t_score)
                     softmax_output_t = softmax_output_t.detach()
+                    # reverse_output_t = ReverseLayerF.apply(softmax_output_t, self.alpha)
                     if self.original_random:
                         random_out_t = self.random_layer.forward([reverse_f_t, softmax_output_t])
                         adv_output_tgt_score = self.domain_dmm(random_out_t.view(-1, random_out_t.size(1)))
@@ -281,8 +295,12 @@ class Train(object):
                         src_weight = None
                         tgt_weight = None
 
-                    n_src, loss_cdan_src = cross_entropy_logits(adv_output_src_score, torch.zeros(self.batch_size).cuda(), src_weight)
-                    n_tgt, loss_cdan_tgt = cross_entropy_logits(adv_output_tgt_score, torch.ones(self.batch_size).cuda(), tgt_weight)
+                    n_src, loss_cdan_src = cross_entropy_logits(adv_output_src_score,
+                                                                torch.zeros(self.batch_size).to(self.device),
+                                                                src_weight)
+                    n_tgt, loss_cdan_tgt = cross_entropy_logits(adv_output_tgt_score,
+                                                                torch.ones(self.batch_size).to(self.device),
+                                                                tgt_weight)
                     da_loss = loss_cdan_src + loss_cdan_tgt
                 else:
                     raise ValueError(f"The da method {self.da_method} is not supported")
@@ -308,7 +326,8 @@ class Train(object):
             print('Training at Epoch ' + str(self.current_epoch) + ' with model training loss ' + str(total_loss_epoch))
         else:
             print('Training at Epoch ' + str(self.current_epoch) + ' model training loss ' + str(model_loss_epoch)
-                  + ", da loss " + str(da_loss_epoch) + ", total training loss " + str(total_loss_epoch) + ", DA lambda " +
+                  + ", da loss " + str(da_loss_epoch) + ", total training loss " + str(
+                total_loss_epoch) + ", DA lambda " +
                   str(epoch_lamb_da))
         return total_loss_epoch, model_loss_epoch, da_loss_epoch, epoch_lamb_da
 
@@ -325,8 +344,7 @@ class Train(object):
         with torch.no_grad():
             self.model.eval()
             for i, (v_d, v_p, labels) in enumerate(data_loader):
-                v_d, v_p, labels = v_d.cuda(), v_p.cuda(), labels.float().cuda()
-                labels = labels.view(-1)  # 确保labels形状为[batch_size]
+                v_d, v_p, labels = v_d.to(self.device), v_p.to(self.device), labels.float().to(self.device)
                 if dataloader == "val":
                     v_d, v_p, f, score = self.model(v_d, v_p)
                 elif dataloader == "test":
@@ -336,8 +354,8 @@ class Train(object):
                 else:
                     n, loss = cross_entropy_logits(score, labels)
                 test_loss += loss.item()
-                y_label = y_label + labels.to("cuda").tolist()
-                y_pred = y_pred + n.to("cuda").tolist()
+                y_label = y_label + labels.to("cpu").tolist()
+                y_pred = y_pred + n.to("cpu").tolist()
         auroc = roc_auc_score(y_label, y_pred)
         auprc = average_precision_score(y_label, y_pred)
         test_loss = test_loss / num_batches
@@ -351,12 +369,12 @@ class Train(object):
             y_pred_s = [1 if i else 0 for i in (y_pred >= thred_optim)]
             cm1 = confusion_matrix(y_label, y_pred_s)
             accuracy = (cm1[0, 0] + cm1[1, 1]) / sum(sum(cm1))
-            sensitivity = cm1[0, 0] / (cm1[0, 0] + cm1[0, 1])
+            precision = cm1[0, 0] / (cm1[0, 0] + cm1[0, 1])
             specificity = cm1[1, 1] / (cm1[1, 0] + cm1[1, 1])
             if self.experiment:
                 self.experiment.log_curve("test_roc curve", fpr, tpr)
                 self.experiment.log_curve("test_pr curve", recall, prec)
             precision1 = precision_score(y_label, y_pred_s)
-            return auroc, auprc, np.max(f1[5:]), sensitivity, specificity, accuracy, test_loss, thred_optim, precision1
+            return auroc, auprc, np.max(f1[5:]), precision, specificity, accuracy, test_loss, thred_optim, precision1
         else:
             return auroc, auprc, test_loss
