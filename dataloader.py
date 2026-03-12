@@ -5,7 +5,7 @@ import torch
 # from functools import partial
 # from dgllife.utils import smiles_to_bigraph, CanonicalAtomFeaturizer, CanonicalBondFeaturizer
 # from utils import integer_label_protein
-from embed_sequences import embed_sequence
+from pro_embedding import embed_sequence
 from prose.models.multitask import ProSEMT
 
 max_length = 1795
