@@ -36,7 +36,7 @@ python run.py --cfg "configs/ProNEP.yaml" --data nlr
 
 If you intend to train on your own dataset, make sure to remember to modify the file names in the run.py file.
 #### 3. Predict
-python pre.py --file1 yourNLRdata --file2 youreffectordata
+python predict.py --nlr_fasta NLRdata --eff_fasta EFFdata --model best_model_epoch_89.pth --cfg configs/ProNEP.yaml --output result.csv --gpu 0
 
 #### Reference
 1. <p name = "ref1">Schulze, S., Yu, L., Hua, C., Zhang, L., Kolb, D., Weber, H., Ehinger, A., Saile, S.C., Stahl, M., Franz-Wachtel, M., et al. (2022). The Arabidopsis TIR-NBS-LRR protein CSA1 guards BAK1-BIR3 homeostasis and mediates convergence of pattern- and effector-induced immune responses. Cell host microbe 30, 1717-1731.</p>
